@@ -37,5 +37,10 @@ del a[m]
 a.center()
 a.set_pbc([False, False, True])
 
+
+# Add offset of 5 to all coordinates
+a.positions += 5
+
+
 io.write('whisker.xyz', a)
 io.write('whisker.data', a, format='lammps-data')

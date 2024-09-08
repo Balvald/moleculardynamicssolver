@@ -8,11 +8,20 @@
 #include <filesystem>
 #include <getopt.h>
 
+
+#ifndef USE_MPI
+#define USE_MPI
+#endif
+
+#ifdef USE_MPI
+#include <mpi.h>
+#endif
+
 #include "atoms.h"
 #include "berendsen.h"
 #include "ducastelle.h"
-#include "mpi_support.h"
 #include "domain.h"
+#include "mpi_support.h"
 
 #include "verlet.h"
 #include "xyz.h"
@@ -23,19 +32,14 @@ using Velocities_t = Eigen::Array3Xd;
 using Forces_t = Eigen::Array3Xd;
 using Names_t = Eigen::Array<std::string, Eigen::Dynamic, 1>;
 
-#ifndef USE_MPI
-#define USE_MPI
-#endif
-
-#ifdef USE_MPI
-#include <mpi.h>
-#endif
-
-
 int main(int argc, char *argv[])
 {
 
 #pragma region CMDLINE_ARGS
+
+    Names_t names;
+    Positions_t positions;
+    Velocities_t velocities;
 
     bool fflag = false;
     bool tflag = false;
@@ -62,7 +66,6 @@ int main(int argc, char *argv[])
     double btvalue;
     double ttvalue;
     double srvalue;
-
     std::string fvalue;
 
     while (true)
@@ -99,7 +102,7 @@ int main(int argc, char *argv[])
             case 'h':
                 std::cout << "Usage: " << argv[0]  << " [-f --file filename]\n" << " [-t --timestep value]\n"   << " [-m --maxstep value]\n" 
                                                    << " [-e --epsilon value]\n" << " [-s --sigma value]\n"      << " [-c --cutoff value]\n"
-                                                   << " [-q --qd value]\n"      << " [-r --relax value]\n"      << " [--eqsteps value]\n" << " [-b --berendsen]\n";
+                                                   << " [-q --qd value]\n"      << " [-r --relax value]\n"      << " [--eqsteps value]\n";
                 return 0;
             case 'f':
                 fflag = true;
@@ -269,30 +272,47 @@ int main(int argc, char *argv[])
 
     // Atoms atoms = Atoms(names, positions, velocities);
 
-    auto [names, positions]{read_xyz("whisker_small.xyz")};
-
-    if (rank == 0)
+    if (rank == 0 && !fflag)
     {
-        outdata.open("./energy-cluster.txt");
-        
-        if (fflag)
+        outdata.open("./energy-cluster_923.txt");
+    }
+
+    // std::cout << "rank: " << rank << " - fflag: " << fflag << std::endl;
+
+    if (fflag)
+    {
+        auto data{read_xyz(fvalue)};
+        names.resize(std::get<0>(data).size());
+        positions.resize(3, std::get<1>(data).cols());
+        names = std::get<0>(data);
+        positions = std::get<1>(data);
+
+        fvalue = fvalue.substr(0, fvalue.find(".xyz"));
+
+
+        if (rank == 0)
         {
-            auto [names, positions]{read_xyz(fvalue)};
-
-            fvalue = fvalue.substr(0, fvalue.find(".xyz"));
-
             outdata.close();
             outdata.open("./energy" + fvalue + ".txt");
         }
+        
+    }
+    else
+    {
+        auto fallbackdata{read_xyz("cluster_923.xyz")};
+        names.resize(std::get<0>(fallbackdata).size());
+        positions.resize(3, std::get<1>(fallbackdata).cols());
+        names = std::get<0>(fallbackdata);
+        positions = std::get<1>(fallbackdata);
     }
 
     Eigen::Array3Xd forces(3, positions.cols());
     forces.setZero();
-    Eigen::Array3Xd velocities(3, positions.cols());
+    velocities.resize(3, positions.cols());
     velocities.setZero();
 
 
-    Atoms atoms = Atoms(positions, velocities);
+    Atoms atoms = Atoms(names, positions, velocities);
 
     // Atoms atoms = init_cube(100, 1.0);
 
@@ -316,14 +336,14 @@ int main(int argc, char *argv[])
     int relaxation_time = 10;
     
     double tau = 1.0;
-    double target_temp = 1.0;
+    double target_temp = 0.0;
 
     double epsilon = 1.0;
     double sigma = 1.0;
     double cutoff = 10.0;
 
     double avg_temp = 0.0;
-
+    double avg_stress = 0.0;
     double strain_rate = 0.0;
 
     if (tflag)
@@ -364,14 +384,20 @@ int main(int argc, char *argv[])
     }
     if (ttflag)
     {
-        target_temp = ttvalue;
+        // multiply by (8.617333262 * (10**(-5)) to convert K to internal unit
+        target_temp = ttvalue * (8.617333262 / 100000.0);
     }
     if (srflag)
     {
         strain_rate = srvalue;
     }
 
-    outdata << timestep << " " << nb_steps << " " << epsilon << " " << sigma << " " << cutoff << " " << q_delta << " " << relaxation_time << " " << eq_steps << " " << strain_rate << std::endl;
+    if (rank == 0)
+    {
+
+        outdata << timestep << " " << nb_steps << " " << epsilon << " " << sigma << " " << cutoff << " " << q_delta << " " << relaxation_time << " " << eq_steps << " " << strain_rate << std::endl;
+
+    }
 
 
     std::stringstream ss;
@@ -380,90 +406,80 @@ int main(int argc, char *argv[])
     NeighborList neighbor_list;
     neighbor_list.update(atoms, cutoff);
     
-    std::cout << "maxcoeff" << atoms.positions.rowwise().maxCoeff().maxCoeff() << std::endl;
+    // std::cout << "maxcoeff" << atoms.positions.rowwise().maxCoeff().maxCoeff() << std::endl;
 
-    double d_rim = 2.0 * cutoff;
-    double min_x = atoms.positions.row(0).minCoeff();
-    double min_y = atoms.positions.row(1).minCoeff();
-    double min_z = atoms.positions.row(2).minCoeff();
+    // Eigen::Array3d d_size{atoms.positions.rowwise().maxCoeff() -
+    //                       atoms.positions.rowwise().minCoeff()};
+
+    // double d_rim = cutoff;
+    //double min_x = atoms.positions.row(0).minCoeff();
+    //double min_y = atoms.positions.row(1).minCoeff();
+    //double min_z = atoms.positions.row(2).minCoeff();
     double max_x = atoms.positions.row(0).maxCoeff();
     double max_y = atoms.positions.row(1).maxCoeff();
     double max_z = atoms.positions.row(2).maxCoeff();
-    double coeff_x = max_x - min_x;
-    double coeff_y = max_y - min_y;
-    double coeff_z = max_z - min_z;
-    double d_size_x = (coeff_x + 3 * d_rim);
-    double d_size_y = (coeff_y + 3 * d_rim);
-    double d_size_z = (coeff_z + 3 * d_rim);
+    double coeff_x = max_x;
+    double coeff_y = max_y;
+    double coeff_z = max_z;
+    double d_size_x = (coeff_x) + 10;
+    double d_size_y = (coeff_y) + 10;
+    double d_size_z = (coeff_z) + 10;
 
     Eigen::Array3d d_size = {d_size_x , d_size_y, d_size_z};
 
-    //Eigen::Array3d d_size = {atoms.positions.rowwise().maxCoeff() -
-    //              atoms.positions.rowwise().minCoeff()};
 
-    std::cout << "d_size: " << d_size << std::endl;
+    // std::cout << "d_size: " << d_size << std::endl;
 
     Eigen::Array3i d_decomposition = {x, y, 1};
+    Eigen::Array3i d_decomposition2 = {1, 1, size};
+
+    assert(x * y * 1 == size);
+
+    // std::cout << "d_decomposition: " << d_decomposition << std::endl;
 
     // periodicity breaks the program.
-    Eigen::Array3i d_periodicity = {0, 0, 0};
+    Eigen::Array3i d_periodicity = {1, 1, 1};
 
-    Domain domain = Domain(MPI_COMM_WORLD, d_size, d_decomposition, d_periodicity);
+    // std::cout << "d_periodicity: " << d_periodicity << std::endl;
 
-
-    std::string filename_new = "cluster_923_new.xyz";
-
-    
-    // write_xyz_filename(filename_new, atoms);
-
-    // domain.enable(atoms);
-    // domain.disable(atoms);
-
-    std::string filename_new_sec = "cluster_923_new_sec.xyz";
-
-    
-    // write_xyz_filename(filename_new_sec, atoms);
-    if (rank == 0) std::cout << "rank: " << rank <<" - pos of first atom-1: " << atoms.positions.col(0) << std::endl;
-    if (rank == 0) std::cout << "rank: " << rank <<" - velocity of first atom-1: " << atoms.velocities.col(0) << std::endl;
+    Domain domain(MPI_COMM_WORLD, d_size, d_decomposition2, d_periodicity);
 
 
-    // NeighborList neighbor_list = NeighborList();
-    // neighbor_list.update(atoms, cutoff);
+    size_t nb_global{atoms.nb_atoms()};
+    Atoms total_atoms = Atoms(nb_global);
+
+    size_t nb_local{atoms.nb_atoms()};
+
+    // std::cout << atoms.positions.col(0) << std::endl;
+    // std::cout << atoms.positions.col(1) << std::endl;
 
     domain.enable(atoms);
-    
-    if (rank == 0) std::cout << "rank: " << rank <<" - pos of first atom0: " << atoms.positions.col(0) << std::endl;
-    if (rank == 0) std::cout << "rank: " << rank <<" - velocity of first atom0: " << atoms.velocities.col(0) << std::endl;
+
+    //std::cout << atoms.positions.col(0) << std::endl;
+    //std::cout << atoms.positions.col(1) << std::endl;
 
     domain.update_ghosts(atoms, cutoff * 2);
-    
-    if (rank == 0) std::cout << "rank: " << rank <<" - pos of first atom1: " << atoms.positions.col(0) << std::endl;
-    if (rank == 0) std::cout << "rank: " << rank <<" - velocity of first atom1: " << atoms.velocities.col(0) << std::endl;
 
     neighbor_list.update(atoms, cutoff);
-    // ducastelle(atoms, neighbor_list);
-    std::cout << "after neighbor_list update" << std::endl;
-
-
-    // print velocity of first atom
-    if (rank == 0) std::cout << "rank: " << rank <<" - pos of first atom2: " << atoms.positions.col(0) << std::endl;
-    if (rank == 0) std::cout << "rank: " << rank <<" - velocity of first atom2: " << atoms.velocities.col(0) << std::endl;
+    ducastelle(atoms, neighbor_list);
 
 #pragma endregion INITIALIZATION
 
-    
+    /*
     for (size_t i = 0; i < eq_steps; ++i)
     {
-        
         // std::cout << "DoingEqStep" << std::endl;
         verlet_step1(atoms.positions, atoms.velocities, atoms.forces, timestep);
 
         domain.exchange_atoms(atoms);
+
         domain.update_ghosts(atoms, cutoff * 2);
 
         neighbor_list.update(atoms, cutoff);
 
         // std::cout << "after neighbor_list update" << std::endl;
+
+        nb_local = domain.nb_local();
 
         double potential_energy{MPI::allreduce(ducastelle_local(atoms, neighbor_list, domain.nb_local(), cutoff), MPI_SUM, MPI_COMM_WORLD)};
 
@@ -473,115 +489,172 @@ int main(int argc, char *argv[])
 
         total_energy = potential_energy + kinetic_energy;
 
-        domain.disable(atoms);
-
         if (rank == 0)
         {
-            std::cout << "EqStep: " << i << std::endl;
-            std::cout << std::setprecision(9) << "E_pot: " << potential_energy << std::endl;
-            std::cout << std::setprecision(9) << "E_kin: " << kinetic_energy << std::endl;
-            std::cout << std::setprecision(9) << "E_tot: " << total_energy << std::endl;
+            // std::cout << "EqStep: " << i << std::endl;
+            // std::cout << std::setprecision(9) << "E_pot: " << potential_energy << std::endl;
+            // std::cout << std::setprecision(9) << "E_kin: " << kinetic_energy << std::endl;
+            // std::cout << std::setprecision(9) << "E_tot: " << total_energy << std::endl;
         }
-
-        domain.enable(atoms);
 
 
     }
+    
+
+    //if (rank == 0) std::cout << "rank: " << rank <<" - velocity of first atom3: " << atoms.velocities.col(0) << std::endl;
+
+    //if (rank == 0) std::cout << "rank: " << rank <<" - velocity of first atom4: " << atoms.velocities.col(0) << std::endl;
     
     if (eq_steps > 0)
     {
+        domain.exchange_atoms(atoms);
         domain.update_ghosts(atoms, cutoff * 2);
         neighbor_list.update(atoms, cutoff);
     }
-    
+    */
 
-    for (size_t i = 0; i < nb_steps; ++i)
+    for (size_t i = 0; i < eq_steps+nb_steps; ++i)
     {
 
-        if (i % 1 == 100) {std::cout << "rank: " << rank << " Step: " << i << std::endl;}
+        // if (i % 1 == 100) {std::cout << "rank: " << rank << " Step: " << i << std::endl;}
 
-        // using lj.h instead of lj_direct_summation.h means we use a cutoff of 0.5
-        verlet_step1(atoms.positions, atoms.velocities, atoms.forces, timestep);
+        verlet_step1(atoms, timestep);
 
         domain.exchange_atoms(atoms);
+
+        nb_local = domain.nb_local();
 
         domain.update_ghosts(atoms, cutoff * 2);
 
         neighbor_list.update(atoms, cutoff);
 
-        double potential_local = ducastelle_local(atoms, neighbor_list, domain.nb_local(), cutoff);
+        // nb_local = domain.nb_local();
+        auto duca = ducastelle_local_stress(atoms, neighbor_list, domain.nb_local(), cutoff);
+        double potential_local = std::get<0>(duca);
+        //double potential_local = ducastelle_local_stress(atoms, neighbor_list, domain.nb_local(), cutoff);
+        Eigen::Matrix3d stress_local = std::get<1>(duca);
+
+        double local_stress = stress_local(2, 2);
+        double global_stress{MPI::allreduce(local_stress, MPI_SUM, MPI_COMM_WORLD)};
 
         double potential_energy{MPI::allreduce(potential_local, MPI_SUM, MPI_COMM_WORLD)};
 
-        verlet_step2(atoms.velocities, atoms.forces, timestep);
+        verlet_step2(atoms, timestep);
 
         if (berendsen)
         {
             berendsen_thermostat_local(atoms, target_temp, timestep, tau, domain.nb_local());
         }
 
-
-        double local_stress{1 / (2 * d_size.prod()) * atoms.stress.leftCols(domain.nb_local()).colwise().sum().sum()};
-        double stress{MPI::allreduce(local_stress, MPI_SUM, MPI_COMM_WORLD)};
-
-        if (i % 100 == 0) {std::cout << std::setprecision(9) << "E_pot: " << potential_energy << std::endl;}
-
         double kin_energy_l{kin_energy_local(atoms, domain.nb_local())};
         
-        //if (rank == 0) std::cout << "rank: " << rank <<" - kinetic_energy: " << kin_energy_l << std::endl;
-        //if (rank == 1) std::cout << "rank: " << rank <<" - kinetic_energy: " << kin_energy_l << std::endl;
-
         double kinetic_energy{MPI::allreduce(kin_energy_l, MPI_SUM, MPI_COMM_WORLD)};
-
-        //if (rank == 0) std::cout << "rank: " << rank <<" - kinetic_energy: " << kinetic_energy << std::endl;
-
-    
-        //if (rank == 0) std::cout << "rank: " << rank <<" - velocity of first atom11: " << atoms.velocities.col(0) << std::endl;
 
         total_energy = potential_energy + kinetic_energy;
 
-        // std::cout << "rank: " << rank << "[" << potential_energy << " , " << kinetic_energy << " , " << total_energy << "]," << std::endl;
+        // Don't resize during equilibration steps
+        if (i >= eq_steps && i % relaxation_time == 0)
+        {
+            d_size.row(2) += strain_rate * timestep;
+            domain.scale(atoms, d_size);
+            domain.exchange_atoms(atoms);
+            domain.update_ghosts(atoms, cutoff * 2);
+            neighbor_list.update(atoms, cutoff);
+        }
 
-        //if (i % relaxation_time == 0 && i != 0)
-        //{
-        //    atoms.velocities *= sqrt(1.0 + (q_delta/kinetic_energy));
-        //}
+        total_atoms = Atoms(nb_global);
+        Atoms local_atoms{atoms};
 
-        d_size.row(2) += strain_rate * timestep;
-        domain.scale(atoms, d_size);
-        domain.exchange_atoms(atoms);
-        domain.update_ghosts(atoms, cutoff * 2);
-        neighbor_list.update(atoms, cutoff);
+        local_atoms.conservativeResize(nb_local);
+
+        auto nb_local_thing{nb_local};
+        int nb_local_ = (int)nb_local_thing;
+
+        // We first need to figure how many atoms there are in total.
+        Eigen::ArrayXi recvcount(size);
+        MPI_Allgather(&nb_local_, 1, MPI_INT, recvcount.data(), 1, MPI_INT, MPI_COMM_WORLD);
+
+        Eigen::Index nb_global_atoms{recvcount.sum()};
+
+        // Resize atoms object to fit all (global) atoms.
+        local_atoms.conservativeResize(nb_global);
+
+        // Compute where in the global array we need to place the results.
+        Eigen::ArrayXi displ(size);
+        displ(0) = 0;
+        for (int i = 0; i < size - 1; i++)
+            displ(i + 1) = displ(i) + recvcount(i);
+
+        // Gather masses, positions, velocities and forces into their respective
+        // arrays.
+        MPI_Allgatherv(local_atoms.masses.data(), nb_local_, MPI_DOUBLE,
+                    total_atoms.masses.data(), recvcount.data(), displ.data(),
+                    MPI_DOUBLE, MPI_COMM_WORLD);
+        recvcount *= 3;
+        displ *= 3;
+        MPI_Allgatherv(local_atoms.positions.data(), 3 * nb_local_, MPI_DOUBLE,
+                    total_atoms.positions.data(), recvcount.data(), displ.data(),
+                    MPI_DOUBLE, MPI_COMM_WORLD);
+        MPI_Allgatherv(local_atoms.velocities.data(), 3 * nb_local_, MPI_DOUBLE,
+                    total_atoms.velocities.data(), recvcount.data(), displ.data(),
+                    MPI_DOUBLE, MPI_COMM_WORLD);
+        MPI_Allgatherv(local_atoms.forces.data(), 3 * nb_local_, MPI_DOUBLE,
+                    total_atoms.forces.data(), recvcount.data(), displ.data(),
+                    MPI_DOUBLE, MPI_COMM_WORLD);
+        /*MPI_Allgatherv(local_atoms.stress.data(), 3 * nb_local_, MPI_DOUBLE,
+                    total_atoms.stress.data(), recvcount.data(), displ.data(),
+                    MPI_DOUBLE, MPI_COMM_WORLD);
+        */
+
+        //std::cout << rank << " th rank has total atoms: " << total_atoms.positions.cols() << std::endl;
+        //std::cout << rank << " th rank has local atoms: " << domain.nb_local() << std::endl;
+
+        if (rank == 0)
+        {
+            //std::cin.get();
+        }
+
+        MPI_Barrier(MPI_COMM_WORLD);
+
+        if (rank == 0)
+        {
+            //std::cout << std::setprecision(9) << "E_kin: " << kinetic_energy << std::endl;
+            //std::cout << std::setprecision(9) << "E_tot: " << potential_energy + kinetic_energy << std::endl;
+            //std::cin.get();
+        }
         
-        potential_local = ducastelle_local(atoms, neighbor_list, domain.nb_local(), cutoff);
-
-        domain.disable(atoms);
+        MPI_Barrier(MPI_COMM_WORLD);
+        // domain.disable(atoms);
 
         if (rank == 0)
         {
             if (i % relaxation_time == 0)
             {
-                // Deposit energy into the system
+                avg_stress = 0.0;
                 avg_temp = 0.0;
-                // auto kinetic_abs = std::abs(kinetic_energy);
-                // atoms.velocities *= sqrt(1.0 + std::abs((q_delta+kinetic_abs)/(kinetic_abs-1.0)));
+                if (q_delta > 0.0 && i > eq_steps)
+                {
+                    auto kinetic_abs = std::abs(kinetic_energy);
+                    atoms.velocities.leftCols(nb_local) *= sqrt(1.0 + std::abs((q_delta+kinetic_abs)/(kinetic_abs-1.0)));
+                }
             }
 
-            if ((i % (relaxation_time)) > (relaxation_time/2)  || i == 0)
+            if (((int)i % (relaxation_time)) > (relaxation_time/2)  || (int) i == 0)
             {
                 avg_temp += 2.0 * kinetic_energy / (3.0 * atoms.positions.cols());
+
             }
+            avg_stress += global_stress / d_size(2);
 
-            if ((i+1) % (relaxation_time) == 0 || i == 0)
+            // outdata << "[" << i << "," << potential_energy << "," << kinetic_energy << "," << potential_energy + kinetic_energy << "," << avg_temp  << "]" << std::endl;
+
+
+            if (((int) i+1) % (relaxation_time) == 0 || (int) i == 0)
             {
-                std::cout << std::setprecision(9) << "E_kin: " << kinetic_energy << std::endl;
-                std::cout << std::setprecision(9) << "E_tot: " << potential_energy + kinetic_energy << std::endl;
-
                 avg_temp /= (relaxation_time/2);
+                avg_stress /= (relaxation_time);
 
-
-                outdata << "[" << i << "," << potential_energy << "," << kinetic_energy << "," << potential_energy + kinetic_energy << "," << avg_temp  << "," << stress <<"]" << std::endl;
-
+                outdata << "[" << i << "," << potential_energy << "," << kinetic_energy << "," << potential_energy + kinetic_energy << "," << (2.0 * kinetic_energy / (3.0 * total_atoms.positions.cols())) << "," << global_stress / d_size(2) << "," << avg_temp << "," << avg_stress <<"]" << std::endl;
 
                 ss.str(std::string());
                 ss << std::setw(8) << std::setfill('0') << std::to_string(i);
@@ -593,12 +666,32 @@ int main(int argc, char *argv[])
                 }
                 // std::cout << "output_path: " << output_path << std::endl;
 
-                write_xyz_filename(output_path, atoms);
+                // std::cout << "writing to file" << std::endl;
 
+                // std::cout << "total_atoms.names.size(): " << total_atoms.names.size() << std::endl;
+                // std::cout << "total_atoms.positions.cols(): " << total_atoms.positions.cols() << std::endl;
+                // std::cout << "total_atoms.velocities.rows(): " << total_atoms.velocities.cols() << std::endl;
+                // std::cout << "total_atoms.forces.cols(): " << total_atoms.forces.cols() << std::endl;
+                // std::cout << "total_atoms.masses.size(): " << total_atoms.masses.size() << std::endl;
+
+                total_atoms.names.conservativeResize(total_atoms.positions.cols());
+                total_atoms.names.setConstant("Au");
+
+                write_xyz_filename_stress(output_path, total_atoms);
+
+                // std::cout << "output_path: " << output_path << std::endl;
             }
+            else
+            {
+                outdata << "[" << i << "," << potential_energy << "," << kinetic_energy << "," << potential_energy + kinetic_energy << "," << (2.0 * kinetic_energy / (3.0 * total_atoms.positions.cols())) << "," << global_stress / d_size(2) << "]" << std::endl;
+            }
+
+            //std::cin.get();
         }
 
-        domain.enable(atoms);
+        MPI_Barrier(MPI_COMM_WORLD);
+
+        // domain.enable(atoms);
 
     }
 
