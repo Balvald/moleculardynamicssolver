@@ -465,53 +465,6 @@ int main(int argc, char *argv[])
 
 #pragma endregion INITIALIZATION
 
-    /*
-    for (size_t i = 0; i < eq_steps; ++i)
-    {
-        // std::cout << "DoingEqStep" << std::endl;
-        verlet_step1(atoms.positions, atoms.velocities, atoms.forces, timestep);
-
-        domain.exchange_atoms(atoms);
-
-        domain.update_ghosts(atoms, cutoff * 2);
-
-        neighbor_list.update(atoms, cutoff);
-
-        // std::cout << "after neighbor_list update" << std::endl;
-
-        nb_local = domain.nb_local();
-
-        double potential_energy{MPI::allreduce(ducastelle_local(atoms, neighbor_list, domain.nb_local(), cutoff), MPI_SUM, MPI_COMM_WORLD)};
-
-        verlet_step2(atoms.velocities, atoms.forces, timestep);
-
-        double kinetic_energy{MPI::allreduce(kin_energy_local(atoms, domain.nb_local()), MPI_SUM, MPI_COMM_WORLD)};
-
-        total_energy = potential_energy + kinetic_energy;
-
-        if (rank == 0)
-        {
-            // std::cout << "EqStep: " << i << std::endl;
-            // std::cout << std::setprecision(9) << "E_pot: " << potential_energy << std::endl;
-            // std::cout << std::setprecision(9) << "E_kin: " << kinetic_energy << std::endl;
-            // std::cout << std::setprecision(9) << "E_tot: " << total_energy << std::endl;
-        }
-
-
-    }
-    
-
-    //if (rank == 0) std::cout << "rank: " << rank <<" - velocity of first atom3: " << atoms.velocities.col(0) << std::endl;
-
-    //if (rank == 0) std::cout << "rank: " << rank <<" - velocity of first atom4: " << atoms.velocities.col(0) << std::endl;
-    
-    if (eq_steps > 0)
-    {
-        domain.exchange_atoms(atoms);
-        domain.update_ghosts(atoms, cutoff * 2);
-        neighbor_list.update(atoms, cutoff);
-    }
-    */
 
     for (size_t i = 0; i < eq_steps+nb_steps; ++i)
     {
@@ -553,7 +506,7 @@ int main(int argc, char *argv[])
         total_energy = potential_energy + kinetic_energy;
 
         // Don't resize during equilibration steps
-        if (i >= eq_steps) // && i % relaxation_time == 0)
+        if (i >= eq_steps && i % relaxation_time == 0)
         {
             d_size.row(2) += strain_rate * timestep;
             domain.scale(atoms, d_size);
@@ -601,10 +554,6 @@ int main(int argc, char *argv[])
         MPI_Allgatherv(local_atoms.forces.data(), 3 * nb_local_, MPI_DOUBLE,
                     total_atoms.forces.data(), recvcount.data(), displ.data(),
                     MPI_DOUBLE, MPI_COMM_WORLD);
-        /*MPI_Allgatherv(local_atoms.stress.data(), 3 * nb_local_, MPI_DOUBLE,
-                    total_atoms.stress.data(), recvcount.data(), displ.data(),
-                    MPI_DOUBLE, MPI_COMM_WORLD);
-        */
 
         //std::cout << rank << " th rank has total atoms: " << total_atoms.positions.cols() << std::endl;
         //std::cout << rank << " th rank has local atoms: " << domain.nb_local() << std::endl;
@@ -635,7 +584,7 @@ int main(int argc, char *argv[])
                 if (q_delta > 0.0 && i > eq_steps)
                 {
                     auto kinetic_abs = std::abs(kinetic_energy);
-                    atoms.velocities.leftCols(nb_local) *= sqrt(1.0 + std::abs((q_delta+kinetic_abs)/(kinetic_abs-1.0)));
+                    atoms.velocities.leftCols(nb_local) *= sqrt(1.0 + (q_delta/kinetic_energy));
                 }
             }
 
