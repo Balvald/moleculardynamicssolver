@@ -118,40 +118,12 @@ void write_xyz(std::ofstream &file, Atoms &atoms) {
     }
 }
 
-void write_xyz_stress(std::ofstream &file, Atoms &atoms) {
-    // Number of atoms
-    file << atoms.nb_atoms() << std::endl;
-
-    // Comment line
-    file << std::endl;
-
-    // Element name, position
-    for (size_t i = 0; i < atoms.nb_atoms(); ++i) {
-        file << std::setw(2) << atoms.names[i]
-             << std::setw(10) << atoms.positions.col(i).transpose()
-             << std::setw(10) << atoms.velocities.col(i).transpose()
-             << std::setw(10) << atoms.stress.col(i).transpose()
-             << std::endl;
-    }
-}
-
 void write_xyz_filename(const std::string &filename, Atoms &atoms) {
     // Open file for writing
     std::ofstream file(filename);
 
     // Write XYZ
     write_xyz(file, atoms);
-
-    // Close file, we're done
-    file.close();
-}
-
-void write_xyz_filename_stress(const std::string &filename, Atoms &atoms) {
-    // Open file for writing
-    std::ofstream file(filename);
-
-    // Write XYZ
-    write_xyz_stress(file, atoms);
 
     // Close file, we're done
     file.close();

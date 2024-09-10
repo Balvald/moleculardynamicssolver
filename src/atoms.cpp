@@ -11,7 +11,6 @@ using Velocities_t = Eigen::Array3Xd;
 using Forces_t = Eigen::Array3Xd;
 using Names_t = Eigen::Array<std::string, Eigen::Dynamic, 1>;
 using Masses_t = Eigen::ArrayXd;
-using Stress_t = Eigen::Array3Xd;
 
 // Molar Masses for small selection of elements
 std::map<std::string, double> table_of_mass =
@@ -34,7 +33,7 @@ double get_mass(const std::string &name)
 };
 
 Atoms::Atoms(): 
-    positions{3, 1}, velocities{3, 1}, forces{3, 1}, stress{3, 1}
+    positions{3, 1}, velocities{3, 1}, forces{3, 1}
 { 
     masses.resize(1);
     masses.setConstant(1.0);
@@ -43,11 +42,10 @@ Atoms::Atoms():
     positions.setZero(); 
     velocities.setZero(); 
     forces.setZero();
-    stress.setZero();
 }
 
 Atoms::Atoms(size_t nb_atoms): 
-    positions{3, nb_atoms}, velocities{3, nb_atoms}, forces{3, nb_atoms}, stress{3, nb_atoms}
+    positions{3, nb_atoms}, velocities{3, nb_atoms}, forces{3, nb_atoms}
 { 
     masses.resize(nb_atoms);
     masses.setConstant(1.0);
@@ -56,23 +54,21 @@ Atoms::Atoms(size_t nb_atoms):
     positions.setZero(); 
     velocities.setZero(); 
     forces.setZero();
-    stress.setZero();
 }
  
 Atoms::Atoms(const Positions_t &p): 
-    positions{p}, velocities{3, p.cols()}, forces{3, p.cols()}, stress{3, p.cols()}
+    positions{p}, velocities{3, p.cols()}, forces{3, p.cols()}
 {
     names.resize(p.cols());
     names.setConstant("H");
     masses.resize(p.cols());
     masses.setConstant(1.0);
     velocities.setZero(); 
-    forces.setZero(); 
-    stress.setZero();
+    forces.setZero();
 } 
 
 Atoms::Atoms(const Names_t &n, const Positions_t &p): 
-    names{n}, positions{p}, velocities{3, p.cols()}, forces{3, p.cols()}, stress{3, p.cols()}
+    names{n}, positions{p}, velocities{3, p.cols()}, forces{3, p.cols()}
 {
     // Try to get the mass of the atom from the name
     masses.resize(p.cols());
@@ -83,11 +79,10 @@ Atoms::Atoms(const Names_t &n, const Positions_t &p):
     velocities.setZero(); 
     assert(p.cols() == velocities.cols());
     forces.setZero();
-    stress.setZero();
 } 
 
 Atoms::Atoms(const Positions_t &p, const Velocities_t &v): 
-    positions{p}, velocities{v}, forces{3, p.cols()}, stress{3, p.cols()}
+    positions{p}, velocities{v}, forces{3, p.cols()}
 {
     masses.resize(p.cols());
     masses.setConstant(1.0);
@@ -95,11 +90,10 @@ Atoms::Atoms(const Positions_t &p, const Velocities_t &v):
     names.setConstant("H");
     assert(p.cols() == v.cols());
     forces.setZero();
-    stress.setZero();
 }
 
 Atoms::Atoms(const Names_t &n, const Positions_t &p, const Velocities_t &v): 
-    names{n}, positions{p}, velocities{v}, forces{3, p.cols()}, stress{3, p.cols()}
+    names{n}, positions{p}, velocities{v}, forces{3, p.cols()}
 {
     // Try to get the mass of the atom from the name
     masses.resize(p.cols());
@@ -109,23 +103,20 @@ Atoms::Atoms(const Names_t &n, const Positions_t &p, const Velocities_t &v):
     }
     assert(p.cols() == v.cols());
     forces.setZero();
-    stress.setZero();
 } 
 
 Atoms::Atoms(const Names_t &n, const Positions_t &p, const Velocities_t &v, const Forces_t &f, double m): 
-    names{n}, positions{p}, velocities{v}, forces{f}, stress{3, p.cols()}
+    names{n}, positions{p}, velocities{v}, forces{f}
 { 
     masses.resize(p.cols());
     masses.setConstant(m);
     assert(p.cols() == v.cols());
-    stress.setZero();
 }
 
 Atoms::Atoms(const Names_t &n, const Positions_t &p, const Velocities_t &v, const Forces_t &f, Masses_t &m_t): 
-    names{n}, positions{p}, velocities{v}, forces{f}, masses{m_t}, stress{3, p.cols()}
+    names{n}, positions{p}, velocities{v}, forces{f}, masses{m_t}
 {
     assert(p.cols() == v.cols());
-    stress.setZero();
 }
 
 size_t Atoms::nb_atoms() const

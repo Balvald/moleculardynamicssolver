@@ -84,26 +84,4 @@ void write_xyz(std::ofstream &file, Atoms& atoms);
  */
 void write_xyz_filename(const std::string &filename, Atoms& atoms);
 
-/*
- * Write positions and velocities to an XYZ file.
- * The XYZ file is structured a follows:
- *     line 1: Number of atoms
- *     line 2: Comment line (is ignored)
- *     following lines: Name X Y Z VX VY VZ
- *         where Name is some name for the atom, X Y Z the position
- *         and VX, VY, VZ the velocity of the atom
- */
-void write_xyz_stress(std::ofstream &file, Atoms& atoms);
-
-/*
- * Write positions and velocities to an XYZ file.
- * The XYZ file is structured a follows:
- *     line 1: Number of atoms
- *     line 2: Comment line (is ignored)
- *     following lines: Name X Y Z VX VY VZ
- *         where Name is some name for the atom, X Y Z the position
- *         and VX, VY, VZ the velocity of the atom
- */
-void write_xyz_filename_stress(const std::string &filename, Atoms& atoms);
-
 #endif //YAMD_XYZ_H

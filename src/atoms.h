@@ -14,7 +14,6 @@ using Velocities_t = Eigen::Array3Xd;
 using Forces_t = Eigen::Array3Xd;
 using Names_t = Eigen::Array<std::string, Eigen::Dynamic, 1>;
 using Masses_t = Eigen::ArrayXd;
-using Stress_t = Eigen::Array3Xd;
 
 class Atoms
 { 
@@ -24,7 +23,6 @@ public:
     Forces_t forces;
     Masses_t masses;
     Names_t names;
-    Stress_t stress;
 
     Atoms();
 

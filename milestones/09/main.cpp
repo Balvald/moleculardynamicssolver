@@ -553,7 +553,7 @@ int main(int argc, char *argv[])
         total_energy = potential_energy + kinetic_energy;
 
         // Don't resize during equilibration steps
-        if (i >= eq_steps && i % relaxation_time == 0)
+        if (i >= eq_steps) // && i % relaxation_time == 0)
         {
             d_size.row(2) += strain_rate * timestep;
             domain.scale(atoms, d_size);
@@ -677,7 +677,7 @@ int main(int argc, char *argv[])
                 total_atoms.names.conservativeResize(total_atoms.positions.cols());
                 total_atoms.names.setConstant("Au");
 
-                write_xyz_filename_stress(output_path, total_atoms);
+                write_xyz_filename(output_path, total_atoms);
 
                 // std::cout << "output_path: " << output_path << std::endl;
             }

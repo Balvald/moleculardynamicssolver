@@ -477,7 +477,7 @@ int main(int argc, char *argv[])
 
         // if (i % 1 == 100) {std::cout << "rank: " << rank << " Step: " << i << std::endl;}
 
-        verlet_step1(atoms, timestep);
+        verlet_step1(atoms.positions, atoms.velocities, atoms.forces, timestep);
 
         domain.exchange_atoms(atoms);
 
@@ -493,7 +493,7 @@ int main(int argc, char *argv[])
 
         double potential_energy{MPI::allreduce(potential_local, MPI_SUM, MPI_COMM_WORLD)};
 
-        verlet_step2(atoms, timestep);
+        verlet_step2(atoms.velocities, atoms.forces, timestep);
 
         if (berendsen)
         {
